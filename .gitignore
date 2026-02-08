@@ -10,7 +10,6 @@ wheels/
 .venv
 
 # Installed dependencies
-uv.lock
 
 # IDE settings
 .idea/
