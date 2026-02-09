@@ -18,6 +18,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "argon2-cffi>=21.1",
     "slowapi>=0.1.9",
+    "requests>=2.32.5",
 ]
 
 [tool.setuptools]

@@ -7,6 +7,7 @@ from app.models import Role, DocumentStatus
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+    role: str = "user"  # "user" or "lawyer"
 
 
 class UserOut(BaseModel):

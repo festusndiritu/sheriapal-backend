@@ -18,6 +18,10 @@ class User(SQLModel, table=True):
     hashed_password: str
     role: Role = Field(sa_column=Column(String, nullable=False, default=Role.USER.value))
     is_active: bool = Field(default=True)
+    is_approved: bool = Field(default=True)  # False for lawyers pending approval
+    approval_requested_at: Optional[datetime] = None  # When lawyer requested approval
+    approved_by: Optional[int] = None  # Admin/superadmin who approved
+    approved_at: Optional[datetime] = None
 
 
 class DocumentStatus(str, Enum):

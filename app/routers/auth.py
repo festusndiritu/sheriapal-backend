@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Any
+from datetime import datetime, timezone
 try:
     from sqlmodel import Session, select
 except Exception:  # pragma: no cover - typing fallback for static analysis environments
@@ -23,7 +24,18 @@ def register(payload: UserCreate, session: Session = Depends(get_session)):
     existing = session.exec(statement).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=payload.email, hashed_password=hash_password(payload.password), role=Role.USER.value)
+
+    # Determine role and approval status
+    role = getattr(payload, 'role', Role.USER.value)
+    is_approved = role != Role.LAWYER.value  # Lawyers need approval, users are auto-approved
+
+    user = User(
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        role=role,
+        is_approved=is_approved,
+        approval_requested_at=datetime.now(timezone.utc) if role == Role.LAWYER.value else None
+    )
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -76,19 +88,69 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
     return UserOut.model_validate(current_user)
 
 
-@router.post("/refresh", response_model=Token)
-def refresh_token(payload: TokenRefresh, session: Session = Depends(get_session)):
-    """Refresh access token using refresh token."""
-    from datetime import timedelta
-    payload_dict = verify_access_token(payload.refresh_token)
-    if not payload_dict or payload_dict.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+@router.get("/lawyers/pending")
+def get_pending_lawyers(session: Session = Depends(get_session), current_user=Depends(require_roles(Role.ADMIN, Role.SUPERADMIN))):
+    """Get list of lawyers pending approval (admin/superadmin only)."""
+    statement = select(User).where(
+        (User.role == Role.LAWYER.value) & (User.is_approved == False)
+    ).order_by(User.approval_requested_at)
+    lawyers = session.exec(statement).all()
+    return [
+        {
+            "id": l.id,
+            "email": l.email,
+            "role": l.role,
+            "requested_at": l.approval_requested_at
+        }
+        for l in lawyers
+    ]
 
-    email = payload_dict.get("sub")
-    statement = select(User).where(User.email == email)
-    user = session.exec(statement).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
 
-    new_token = create_access_token({"sub": user.email})
-    return {"access_token": new_token, "token_type": "bearer"}
+@router.post("/lawyers/{lawyer_id}/approve")
+def approve_lawyer(lawyer_id: int, session: Session = Depends(get_session), current_user=Depends(require_roles(Role.ADMIN, Role.SUPERADMIN))):
+    """Approve a lawyer (admin/superadmin only)."""
+    statement = select(User).where(User.id == lawyer_id)
+    lawyer = session.exec(statement).first()
+
+    if not lawyer:
+        raise HTTPException(status_code=404, detail="Lawyer not found")
+    if lawyer.role != Role.LAWYER.value:
+        raise HTTPException(status_code=400, detail="User is not a lawyer")
+    if lawyer.is_approved:
+        raise HTTPException(status_code=400, detail="Lawyer already approved")
+
+    lawyer.is_approved = True
+    lawyer.approved_by = current_user.id
+    lawyer.approved_at = datetime.now(timezone.utc)
+    session.add(lawyer)
+    session.commit()
+    session.refresh(lawyer)
+
+    return {
+        "id": lawyer.id,
+        "email": lawyer.email,
+        "status": "approved",
+        "approved_at": lawyer.approved_at
+    }
+
+
+@router.post("/lawyers/{lawyer_id}/decline")
+def decline_lawyer(lawyer_id: int, reason: str = "Application declined", session: Session = Depends(get_session), current_user=Depends(require_roles(Role.ADMIN, Role.SUPERADMIN))):
+    """Decline a lawyer application (admin/superadmin only)."""
+    statement = select(User).where(User.id == lawyer_id)
+    lawyer = session.exec(statement).first()
+
+    if not lawyer:
+        raise HTTPException(status_code=404, detail="Lawyer not found")
+    if lawyer.role != Role.LAWYER.value:
+        raise HTTPException(status_code=400, detail="User is not a lawyer")
+
+    # Delete the user since application was declined
+    session.delete(lawyer)
+    session.commit()
+
+    return {
+        "id": lawyer_id,
+        "status": "declined",
+        "reason": reason
+    }
