@@ -64,6 +64,9 @@ cd sheriapal-backend
 # Install dependencies
 uv pip install -e ".[dev]"
 
+# Create superadmin account (first time setup)
+python scripts/create_superadmin.py
+
 # Run development server
 python -m uvicorn main:app --reload
 
@@ -75,16 +78,23 @@ python -m pytest tests/ -v
 - **Docs**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
-## API Endpoints (19 total)
+## 📊 API Endpoints (22 total)
 
 ### Authentication (6)
 ```
-POST   /auth/register              - Create new user account
+POST   /auth/register              - Create new user account (specify role: "user" or "lawyer")
 POST   /auth/login                 - Login, get JWT token
 POST   /auth/refresh               - Refresh expired token
 GET    /auth/users/me              - Get current user profile
 POST   /auth/admin/users           - Create admin user (superadmin)
 POST   /auth/users/{user_id}/role  - Assign role to user (superadmin)
+```
+
+### Lawyer Management (3)
+```
+GET    /auth/lawyers/pending       - List pending lawyer approvals (admin/superadmin)
+POST   /auth/lawyers/{id}/approve  - Approve lawyer application (admin/superadmin)
+POST   /auth/lawyers/{id}/decline  - Decline lawyer application (admin/superadmin)
 ```
 
 ### Documents (7)
@@ -106,11 +116,43 @@ GET    /ai/templates               - List available templates
 GET    /health                     - Health check
 ```
 
-## Usage Examples
+## 📝 Usage Examples
+
+### Register as Lawyer (Pending Approval)
+```bash
+curl -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "lawyer@example.com",
+    "password": "secure_password",
+    "role": "lawyer"
+  }'
+
+# Response: User created with is_approved=false until admin approves
+```
+
+### List and Approve Pending Lawyers (Admin/Superadmin)
+```bash
+TOKEN="<admin_or_superadmin_token>"
+
+# Get pending lawyers
+curl -X GET http://localhost:8000/auth/lawyers/pending \
+  -H "Authorization: Bearer $TOKEN"
+
+# Approve lawyer
+curl -X POST http://localhost:8000/auth/lawyers/1/approve \
+  -H "Authorization: Bearer $TOKEN"
+
+# Or decline lawyer
+curl -X POST http://localhost:8000/auth/lawyers/1/decline \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Credentials not verified"}'
+```
 
 ### Register and Login
 ```bash
-# Register
+# Register as regular user
 curl -X POST http://localhost:8000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "secure_password"}'
@@ -119,6 +161,8 @@ curl -X POST http://localhost:8000/auth/register \
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email": "user@example.com", "password": "secure_password"}'
+
+# Response includes access_token
 ```
 
 ### Upload and Query Documents
@@ -257,7 +301,43 @@ Available for AI drafting:
 
 **⚠️ Always review AI-generated documents with a legal professional before use.**
 
-## Development
+## 🔧 Development
+
+### Creating the Superadmin Account
+
+Run the superadmin creation script:
+
+```bash
+# Interactive mode (will prompt for email and password)
+python scripts/create_superadmin.py
+
+# Or with arguments
+python scripts/create_superadmin.py --email admin@example.com --password SecurePassword123
+```
+
+The superadmin can then:
+- Create other admin users: `POST /auth/admin/users`
+- Assign roles to users: `POST /auth/users/{id}/role`
+- Approve/decline lawyers: `POST /auth/lawyers/{id}/approve`
+- Manage all documents and users
+
+### Lawyer Approval Workflow
+
+1. **Lawyer registers** with `role: "lawyer"`
+   - Account created with `is_approved=false`
+   - Waits for admin/superadmin approval
+
+2. **Admin/Superadmin views pending lawyers**
+   - `GET /auth/lawyers/pending`
+
+3. **Admin/Superadmin approves or declines**
+   - Approve: `POST /auth/lawyers/{id}/approve`
+   - Decline: `POST /auth/lawyers/{id}/decline`
+
+4. **Approved lawyers can now**
+   - Upload and submit documents
+   - Draft legal documents
+   - Query AI for legal guidance
 
 ### Adding an Endpoint
 
@@ -347,8 +427,8 @@ Proprietary - Sheriapal Platform
 
 ---
 
-**Status**: Production Ready  
-**Last Updated**: February 8, 2026  
-**Tests**: 15/15 passing  
-**API Endpoints**: 19  
+**Status**: Production Ready ✅  
+**Last Updated**: February 9, 2026  
+**Tests**: 17/17 passing  
+**API Endpoints**: 22  
 
