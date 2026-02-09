@@ -1,7 +1,11 @@
+import os
 from datetime import datetime, timedelta, UTC
-
-from utils.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from jose import JWTError, jwt
+
+# Get values from environment variables
+SECRET_KEY = os.getenv("SECRET_KEY", "defaultsecretke")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     """Create a JWT access token. `data` should contain a `sub` claim (e.g. user's email or id).
